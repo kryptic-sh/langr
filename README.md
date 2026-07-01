@@ -111,13 +111,22 @@ formal source (Tatoeba, Wikipedia) with a clean informal one (OpenSubtitles),
 balanced to a similar size per language, and **test on both registers**. Adding
 OpenSubtitles to a Tatoeba model, measured on held-out sets of each register:
 
-| Model                   | Formal (Tatoeba) | Informal (subtitles) |
-| ----------------------- | ---------------- | -------------------- |
-| Tatoeba only            | 87.5%            | 66.1%                |
-| Tatoeba + OpenSubtitles | 86.4%            | **75.1%**            |
+| Model                          | Formal (Tatoeba) | Informal (subtitles) |
+| ------------------------------ | ---------------- | -------------------- |
+| Tatoeba only                   | 87.5%            | 66.1%                |
+| **Tatoeba + OpenSubtitles**    | 86.4%            | **75.1%**            |
+| Tatoeba + OpenSubtitles + Wiki | 83.6%            | 72.3%                |
 
 Informal accuracy jumps ~9 points for a ~1-point formal cost — because subtitles
-are _clean_ informal register. Contrast with raw CC-100 below.
+are _clean_ informal register. **Tatoeba + OpenSubtitles is the recommended
+blend.** Two sources that did _not_ help:
+
+- **OPUS-Wikipedia (`wikipedia`)** regressed both registers: its v1.0 mono set
+  covers only ~20 languages (so they swamp the balance), and encyclopedic text
+  is dense with foreign proper nouns (place/person names) that read as
+  cross-lingual noise. For broad clean formal data, use full Wikipedia dumps
+  with real markup+entity stripping, not this corpus.
+- **Raw CC-100** — see below.
 
 Tatoeba discovers every language from its index (~430), keeps those with at
 least `--min` sentences, caps at `--max-sentences`, and splits `--train` into

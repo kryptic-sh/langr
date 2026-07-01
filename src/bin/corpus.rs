@@ -10,6 +10,8 @@
 //!   site index; codes are already 639-3.
 //! - **opensubtitles** — conversational movie/TV subtitles (gzip plaintext,
 //!   OPUS), the informal/slang-adjacent register; mapped to 639-3.
+//! - **wikipedia** — encyclopedic sentences (gzip plaintext, OPUS), a clean
+//!   formal register with broad tail coverage; mapped to 639-3.
 //! - **cc100** — CommonCrawl-derived monolingual text (xz plaintext); raw web
 //!   crawl, noisy — clean before use.
 //!
@@ -28,7 +30,7 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(about = "Download and prepare a training corpus (639-3 labels)")]
 struct Args {
-    /// Sources to pull: `tatoeba`, `opensubtitles`, `cc100` (comma-separated).
+    /// Sources: `tatoeba`, `opensubtitles`, `wikipedia`, `cc100` (comma-sep).
     #[arg(long, value_delimiter = ',', default_value = "tatoeba")]
     source: Vec<String>,
     /// Base URL for Tatoeba per-language exports.
@@ -46,6 +48,12 @@ struct Args {
         default_value = "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono"
     )]
     opensubtitles_url: String,
+    /// Base URL for OPUS Wikipedia monolingual files.
+    #[arg(
+        long,
+        default_value = "https://object.pouta.csc.fi/OPUS-Wikipedia/v1.0/mono"
+    )]
+    wikipedia_url: String,
     /// Output corpus root (one subdir per language).
     #[arg(short, long, default_value = "corpus")]
     out: PathBuf,
@@ -111,9 +119,10 @@ fn main() -> Result<()> {
             "tatoeba" => jobs.extend(tatoeba_jobs(&agent, &args)?),
             "cc100" => jobs.extend(cc100_jobs(&args)),
             "opensubtitles" => jobs.extend(opensubtitles_jobs(&args)),
+            "wikipedia" => jobs.extend(wikipedia_jobs(&args)),
             other => {
                 return Err(anyhow!(
-                    "unknown source '{other}' (want tatoeba|opensubtitles|cc100)"
+                    "unknown source '{other}' (want tatoeba|opensubtitles|wikipedia|cc100)"
                 ))
             }
         }
@@ -223,6 +232,22 @@ fn opensubtitles_jobs(args: &Args) -> Vec<Job> {
             code: (*iso).to_string(),
             url: format!("{base}/{os}.txt.gz"),
             source: "opensubtitles",
+            decomp: Decomp::Gzip,
+            tsv_col: None,
+        })
+        .collect()
+}
+
+/// Build Wikipedia jobs from the fixed OPUS language list, mapped to 639-3.
+fn wikipedia_jobs(args: &Args) -> Vec<Job> {
+    let base = args.wikipedia_url.trim_end_matches('/');
+    WIKIPEDIA_LANGS
+        .iter()
+        .filter(|(_, iso)| args.langs.is_empty() || args.langs.iter().any(|l| l == iso))
+        .map(|(wp, iso)| Job {
+            code: (*iso).to_string(),
+            url: format!("{base}/{wp}.txt.gz"),
+            source: "wikipedia",
             decomp: Decomp::Gzip,
             tsv_col: None,
         })
@@ -376,4 +401,33 @@ const OPENSUB_LANGS: &[(&str, &str)] = &[
     ("sk", "slk"), ("sl", "slv"), ("sq", "sqi"), ("sr", "srp"), ("sv", "swe"),
     ("ta", "tam"), ("te", "tel"), ("th", "tha"), ("tl", "tgl"), ("tr", "tur"),
     ("uk", "ukr"), ("ur", "urd"), ("vi", "vie"), ("zh_cn", "cmn"), ("zh_tw", "cmn"),
+];
+
+/// OPUS Wikipedia file code -> ISO 639-3 output code. Specific codes match
+/// Tatoeba's (pes, nob, nno, zsm, cmn, lvs, kmr) so sources merge.
+#[rustfmt::skip]
+const WIKIPEDIA_LANGS: &[(&str, &str)] = &[
+    ("en", "eng"), ("fr", "fra"), ("de", "deu"), ("es", "spa"), ("it", "ita"),
+    ("pt", "por"), ("nl", "nld"), ("pl", "pol"), ("ru", "rus"), ("ja", "jpn"),
+    ("zh", "cmn"), ("ar", "ara"), ("ko", "kor"), ("sv", "swe"), ("uk", "ukr"),
+    ("vi", "vie"), ("ca", "cat"), ("no", "nob"), ("nn", "nno"), ("fi", "fin"),
+    ("cs", "ces"), ("hu", "hun"), ("fa", "pes"), ("ro", "ron"), ("tr", "tur"),
+    ("id", "ind"), ("he", "heb"), ("da", "dan"), ("el", "ell"), ("bg", "bul"),
+    ("sr", "srp"), ("sk", "slk"), ("hr", "hrv"), ("lt", "lit"), ("sl", "slv"),
+    ("et", "est"), ("lv", "lvs"), ("ms", "zsm"), ("th", "tha"), ("hi", "hin"),
+    ("bn", "ben"), ("ta", "tam"), ("te", "tel"), ("ml", "mal"), ("kn", "kan"),
+    ("mr", "mar"), ("gu", "guj"), ("pa", "pan"), ("ur", "urd"), ("ne", "npi"),
+    ("si", "sin"), ("my", "mya"), ("km", "khm"), ("lo", "lao"), ("ka", "kat"),
+    ("hy", "hye"), ("az", "aze"), ("kk", "kaz"), ("uz", "uzb"), ("ky", "kir"),
+    ("tg", "tgk"), ("mn", "mon"), ("be", "bel"), ("mk", "mkd"), ("sq", "sqi"),
+    ("eu", "eus"), ("gl", "glg"), ("is", "isl"), ("ga", "gle"), ("cy", "cym"),
+    ("gd", "gla"), ("br", "bre"), ("oc", "oci"), ("ast", "ast"), ("la", "lat"),
+    ("eo", "epo"), ("ia", "ina"), ("ie", "ile"), ("vo", "vol"), ("af", "afr"),
+    ("sw", "swh"), ("am", "amh"), ("ha", "hau"), ("yo", "yor"), ("ig", "ibo"),
+    ("zu", "zul"), ("xh", "xho"), ("so", "som"), ("mg", "mlg"), ("sn", "sna"),
+    ("wo", "wol"), ("ln", "lin"), ("or", "ori"), ("as", "asm"), ("sa", "san"),
+    ("ug", "uig"), ("ps", "pus"), ("sd", "snd"), ("ku", "kmr"), ("fy", "fry"),
+    ("lb", "ltz"), ("li", "lim"), ("sc", "srd"), ("co", "cos"), ("rm", "roh"),
+    ("scn", "scn"), ("vec", "vec"), ("pms", "pms"), ("lmo", "lmo"), ("tt", "tat"),
+    ("ba", "bak"), ("cv", "chv"), ("os", "oss"), ("tk", "tuk"), ("nap", "nap"),
 ];
