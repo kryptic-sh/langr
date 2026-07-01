@@ -3,7 +3,9 @@
 # Trained artifacts and vendored tokenizer (fetched, not committed)
 *.bin
 tokenizer.json
-/models/
+# Model binaries live in /models/ but the manifest (text) is committed.
+/models/*
+!/models/manifest.json
 
 # Local training corpora (bring your own)
 /corpus/

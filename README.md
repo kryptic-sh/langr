@@ -71,6 +71,15 @@ cargo run --release --bin langr-detect -- \
 The bundled `sample-corpus/` is only a smoke test. For real accuracy, train on a
 proper multilingual corpus — see below.
 
+## Pretrained model
+
+**langr-v1** — 84 languages (ISO 639-3), Tatoeba + OpenSubtitles, ~3.4 MB.
+Neutral-set accuracy **92.6%** (FLORES-200), and `confidence ≥ 0.30 ⇒ ~95%`
+precision. It is a derived artifact (not committed); rebuild it exactly or fetch
+the release matching `models/manifest.json` (which pins the tokenizer by
+SHA-256). Full details, eval, calibration, and licensing in
+[`MODEL_CARD.md`](MODEL_CARD.md).
+
 ## Training corpus
 
 Layout: one subdirectory per language code, holding UTF-8 text files (any
