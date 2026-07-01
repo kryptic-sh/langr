@@ -1,0 +1,12 @@
+# Optimize for the CPU that builds this repo: lets LLVM auto-vectorize with the
+# widest instruction set available (AVX2/AVX512/NEON) across langr AND its
+# dependencies — including the tokenizer, which is the detection hot path.
+#
+# NOTE: binaries built with this only run on CPUs matching (or newer than) the
+# build machine. For portable/distributable binaries, remove this file or
+# override with `RUSTFLAGS="-C target-cpu=x86-64-v2" cargo build --release`.
+#
+# This config affects only builds inside this directory; crates that depend on
+# `langr` are unaffected and choose their own target-cpu.
+[build]
+rustflags = ["-C", "target-cpu=native"]

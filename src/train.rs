@@ -22,10 +22,11 @@
 use crate::model::{LangId, LangModel, Posterior, MODEL_VERSION};
 use crate::tokenizer::Encoder;
 use anyhow::{bail, Context, Result};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Knobs for [`train`].
 #[derive(Debug, Clone)]
@@ -91,44 +92,53 @@ pub fn train(
         .collect();
     let h_max = (num_langs as f64).ln();
 
-    for (&tok, &total_c) in &token_totals {
-        if total_c < cfg.min_token_count || (tok as usize) >= vocab_size {
-            continue;
-        }
+    // Build each token's posterior independently across rayon workers, then
+    // scatter the results into the dense tables.
+    let built: Vec<(u32, Posterior, f32)> = token_totals
+        .par_iter()
+        .filter_map(|(&tok, &total_c)| {
+            if total_c < cfg.min_token_count || (tok as usize) >= vocab_size {
+                return None;
+            }
 
-        // P(token | lang) for every language, then normalize to P(lang | token).
-        let mut posterior: Vec<(usize, f64)> = Vec::with_capacity(num_langs);
-        let mut sum = 0.0f64;
-        for (li, l) in langs.iter().enumerate() {
-            let c = l.counts.get(&tok).copied().unwrap_or(0);
-            let p = (c as f64 + cfg.add_k) / denom[li];
-            posterior.push((li, p));
-            sum += p;
-        }
-        for entry in &mut posterior {
-            entry.1 /= sum;
-        }
+            // P(token | lang) for every language, then normalize to P(lang | token).
+            let mut posterior: Vec<(usize, f64)> = Vec::with_capacity(num_langs);
+            let mut sum = 0.0f64;
+            for (li, l) in langs.iter().enumerate() {
+                let c = l.counts.get(&tok).copied().unwrap_or(0);
+                let p = (c as f64 + cfg.add_k) / denom[li];
+                posterior.push((li, p));
+                sum += p;
+            }
+            for entry in &mut posterior {
+                entry.1 /= sum;
+            }
 
-        // Discriminative weight from entropy of the full posterior.
-        let entropy: f64 = posterior
-            .iter()
-            .map(|&(_, p)| if p > 0.0 { -p * p.ln() } else { 0.0 })
-            .sum();
-        let weight = if h_max > 0.0 {
-            (1.0 - entropy / h_max) as f32
-        } else {
-            0.0
-        };
+            // Discriminative weight from entropy of the full posterior.
+            let entropy: f64 = posterior
+                .iter()
+                .map(|&(_, p)| if p > 0.0 { -p * p.ln() } else { 0.0 })
+                .sum();
+            let weight = if h_max > 0.0 {
+                (1.0 - entropy / h_max) as f32
+            } else {
+                0.0
+            };
 
-        // Keep top-K languages and renormalize their share.
-        posterior.sort_by(|a, b| b.1.total_cmp(&a.1));
-        posterior.truncate(cfg.top_k);
-        let top_sum: f64 = posterior.iter().map(|&(_, p)| p).sum();
-        let entry: Posterior = posterior
-            .iter()
-            .map(|&(li, p)| (li as LangId, (p / top_sum) as f32))
-            .collect();
+            // Keep top-K languages and renormalize their share.
+            posterior.sort_by(|a, b| b.1.total_cmp(&a.1));
+            posterior.truncate(cfg.top_k);
+            let top_sum: f64 = posterior.iter().map(|&(_, p)| p).sum();
+            let entry: Posterior = posterior
+                .iter()
+                .map(|&(li, p)| (li as LangId, (p / top_sum) as f32))
+                .collect();
 
+            Some((tok, entry, weight))
+        })
+        .collect();
+
+    for (tok, entry, weight) in built {
         token_post[tok as usize] = entry;
         token_weight[tok as usize] = weight;
     }
@@ -143,29 +153,34 @@ pub fn train(
     })
 }
 
-/// Walk the corpus and count token frequencies per language.
+/// Walk the corpus and count token frequencies per language, one language per
+/// rayon worker. Tokenization dominates training cost, so this scales roughly
+/// linearly with cores while the number of languages exceeds the core count.
 fn count_corpus(root: &Path, encoder: &Encoder, cfg: &TrainConfig) -> Result<Vec<LangCounts>> {
-    let mut out = Vec::new();
-    let entries =
-        fs::read_dir(root).with_context(|| format!("read corpus dir {}", root.display()))?;
-
-    for entry in entries {
+    let mut dirs: Vec<(String, PathBuf)> = Vec::new();
+    for entry in
+        fs::read_dir(root).with_context(|| format!("read corpus dir {}", root.display()))?
+    {
         let entry = entry?;
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
+        if path.is_dir() {
+            let code = entry.file_name().to_string_lossy().into_owned();
+            dirs.push((code, path));
         }
-        let code = entry.file_name().to_string_lossy().into_owned();
-        let mut lang = LangCounts {
-            code,
-            counts: HashMap::new(),
-            total: 0,
-        };
-        count_lang_dir(&path, encoder, cfg, &mut lang)?;
-        eprintln!("  {}: {} tokens", lang.code, lang.total);
-        out.push(lang);
     }
-    Ok(out)
+
+    dirs.par_iter()
+        .map(|(code, path)| {
+            let mut lang = LangCounts {
+                code: code.clone(),
+                counts: HashMap::new(),
+                total: 0,
+            };
+            count_lang_dir(path, encoder, cfg, &mut lang)?;
+            eprintln!("  {}: {} tokens", lang.code, lang.total);
+            Ok(lang)
+        })
+        .collect()
 }
 
 fn count_lang_dir(

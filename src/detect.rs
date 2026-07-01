@@ -45,6 +45,14 @@ impl Detector {
         Ok(self.detect_ids(&ids))
     }
 
+    /// Detect a batch of inputs in parallel across rayon workers. Tokenization
+    /// dominates cost and is embarrassingly parallel, so throughput scales with
+    /// cores. Order of results matches `texts`.
+    pub fn detect_batch(&self, texts: &[&str]) -> Result<Vec<Detection>> {
+        use rayon::prelude::*;
+        texts.par_iter().map(|t| self.detect(t)).collect()
+    }
+
     /// Score pre-tokenized ids. Exposed for callers that tokenize once and
     /// reuse the ids, and for testing.
     pub fn detect_ids(&self, ids: &[u32]) -> Detection {

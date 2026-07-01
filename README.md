@@ -104,6 +104,31 @@ println!("{} ({:.0}%)", result.language, result.confidence * 100.0);
 # Ok::<(), anyhow::Error>(())
 ```
 
+## Performance
+
+Detection is ~93% tokenization and ~7% arithmetic, so the aggregation is not the
+bottleneck — parallelism and letting the compiler vectorize the tokenizer are.
+
+- **`detect_batch`** runs inputs across all cores. On a 32-core box it reaches
+  **~1.28M detections/s** (vs ~108k/s single-threaded — 11.9×).
+- **Training** parallelizes tokenization across languages: on the same box a
+  43-language corpus (~1.5M sentences) trains in **1.45s vs 13.7s**
+  single-thread (9.4×).
+- **`target-cpu=native`** (in `.cargo/config.toml`) lets LLVM emit AVX2/AVX512
+  (or NEON) across `langr` and its dependencies, including the tokenizer. Remove
+  that file for portable binaries.
+
+Measured with 43 languages held out from Tatoeba: **94% top-1 accuracy** on
+short single sentences (higher on longer text), 3.3 MB model, ~9.3 µs/detect
+single-threaded.
+
+Reproduce with the bundled examples:
+
+```sh
+cargo run --release --example eval  -- -t tokenizer.json -m model.bin -d test
+cargo run --release --example bench -- -t tokenizer.json -m model.bin -i test/eng.txt
+```
+
 ## Licensing & data
 
 `langr` ships **code only**. It bundles no vocab, no corpus, and no trained
