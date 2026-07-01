@@ -17,6 +17,14 @@ thread_local! {
 }
 
 /// A loaded detector: a tokenizer plus its trained posterior table.
+///
+/// [`Detector`] is `Sync`: detection takes `&self` and holds no mutable state
+/// (the aggregation scratch is thread-local). Callers can pick their own
+/// concurrency model:
+/// - single-threaded — call [`detect`](Detector::detect) directly;
+/// - caller-managed threads — wrap in `Arc<Detector>` and call `detect`
+///   concurrently;
+/// - built-in — call [`detect_batch`](Detector::detect_batch) for a rayon fan-out.
 pub struct Detector {
     encoder: Encoder,
     model: LangModel,
@@ -71,9 +79,11 @@ impl Detector {
         Ok(self.detect_ids(&ids))
     }
 
-    /// Detect a batch of inputs in parallel across rayon workers. Tokenization
+    /// Detect a batch of inputs in parallel across rayon workers — a
+    /// convenience for callers that want built-in parallelism. Tokenization
     /// dominates cost and is embarrassingly parallel, so throughput scales with
-    /// cores. Order of results matches `texts`.
+    /// cores. Order of results matches `texts`. Callers who manage their own
+    /// threads can instead share the detector and call [`detect`](Self::detect).
     pub fn detect_batch(&self, texts: &[&str]) -> Result<Vec<Detection>> {
         use rayon::prelude::*;
         texts.par_iter().map(|t| self.detect(t)).collect()
