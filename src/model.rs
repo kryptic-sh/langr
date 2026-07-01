@@ -26,7 +26,8 @@ pub struct LangModel {
     pub version: u32,
     /// Language codes; a `LangId` indexes into this.
     pub langs: Vec<String>,
-    /// How many languages are kept per token.
+    /// How many languages were kept per token at training time. Stored as
+    /// metadata only — detection reads whatever each posterior slice contains.
     pub top_k: usize,
     /// Tokenizer vocab size the table was built against.
     pub vocab_size: usize,
@@ -57,11 +58,6 @@ impl LangModel {
             ));
         }
         Ok(model)
-    }
-
-    /// Look up a language code by id.
-    pub fn lang(&self, id: LangId) -> &str {
-        &self.langs[id as usize]
     }
 }
 

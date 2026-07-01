@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use langr::{Detector, Encoder, LangModel};
+use langr::Detector;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -27,13 +27,12 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let enc = Encoder::from_file(&args.tokenizer)?;
-    let model = LangModel::load(&args.model)?;
-    let mut detector = Detector::new(Encoder::from_file(&args.tokenizer)?, model);
+    let mut detector = Detector::load(&args.tokenizer, &args.model)?;
     if let Some(n) = args.max_bytes {
         detector = detector.with_max_input_bytes(n);
         println!("(capping inputs to {n} bytes)");
     }
+    let enc = detector.encoder();
 
     let text = fs::read_to_string(&args.input)?;
     let lines: Vec<&str> = text

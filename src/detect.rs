@@ -4,6 +4,7 @@ use crate::model::LangModel;
 use crate::schema::{Detection, LangScore};
 use crate::tokenizer::Encoder;
 use anyhow::Result;
+use rayon::prelude::*;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -72,7 +73,7 @@ impl Detector {
     /// Detect the language mixture of `text`.
     pub fn detect(&self, text: &str) -> Result<Detection> {
         let text = match self.max_input_bytes {
-            Some(n) if text.len() > n => &text[..floor_char_boundary(text, n)],
+            Some(n) if text.len() > n => &text[..text.floor_char_boundary(n)],
             _ => text,
         };
         let ids = self.encoder.encode(text)?;
@@ -85,8 +86,12 @@ impl Detector {
     /// cores. Order of results matches `texts`. Callers who manage their own
     /// threads can instead share the detector and call [`detect`](Self::detect).
     pub fn detect_batch(&self, texts: &[&str]) -> Result<Vec<Detection>> {
-        use rayon::prelude::*;
         texts.par_iter().map(|t| self.detect(t)).collect()
+    }
+
+    /// Borrow the tokenizer — e.g. to pre-encode inputs once and reuse the ids.
+    pub fn encoder(&self) -> &Encoder {
+        &self.encoder
     }
 
     /// Score pre-tokenized ids. Exposed for callers that tokenize once and
@@ -153,19 +158,6 @@ fn score(model: &LangModel, multilingual_threshold: f32, ids: &[u32]) -> Detecti
             scored_tokens: scored,
         }
     })
-}
-
-/// Largest index `<= max` that lies on a UTF-8 char boundary of `s`.
-/// (`str::floor_char_boundary` is still unstable.)
-fn floor_char_boundary(s: &str, max: usize) -> usize {
-    if max >= s.len() {
-        return s.len();
-    }
-    let mut i = max;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }
 
 #[cfg(test)]

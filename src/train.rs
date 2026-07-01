@@ -190,13 +190,13 @@ fn count_lang_dir(
     lang: &mut LangCounts,
 ) -> Result<()> {
     for entry in fs::read_dir(dir)? {
+        if lang.total >= cfg.max_tokens_per_lang {
+            break;
+        }
         let path = entry?.path();
         if path.is_dir() {
             count_lang_dir(&path, encoder, cfg, lang)?;
             continue;
-        }
-        if lang.total >= cfg.max_tokens_per_lang {
-            break;
         }
         let file = fs::File::open(&path).with_context(|| format!("open {}", path.display()))?;
         for line in BufReader::new(file).lines() {
