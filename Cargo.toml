@@ -21,6 +21,15 @@ path = "src/bin/train.rs"
 name = "langr-detect"
 path = "src/bin/detect.rs"
 
+[[bin]]
+name = "langr-corpus"
+path = "src/bin/corpus.rs"
+required-features = ["corpus"]
+
+[features]
+# Opt-in corpus downloader; keeps the HTTP/bzip2 stack out of detection-only builds.
+corpus = ["dep:ureq", "dep:bzip2-rs"]
+
 [dependencies]
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 serde = { version = "1", features = ["derive"] }
@@ -29,6 +38,8 @@ bincode = "1.3"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 rayon = "1.10"
+ureq = { version = "2", optional = true }
+bzip2-rs = { version = "0.1", optional = true }
 
 [profile.release]
 lto = "thin"

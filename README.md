@@ -78,17 +78,37 @@ extension), read line by line.
 
 ```text
 corpus/
-  en/  news.txt  wiki.txt
-  fr/  news.txt
-  ja/  wiki.txt
+  eng/  news.txt  wiki.txt
+  fra/  news.txt
+  jpn/  wiki.txt
 ```
 
-Recommended sources (permissive licenses):
+### Build one from Tatoeba (`langr-corpus`)
+
+The optional `langr-corpus` bin (behind the `corpus` feature) downloads and
+prepares a corpus from Tatoeba's per-language exports, labeled with uniform
+3-char ISO 639-3 codes. Downloads run in parallel with retries and report
+failures — no silent truncation.
+
+```sh
+cargo run --release --features corpus --bin langr-corpus -- \
+  --out corpus --test-out test --jobs 10
+```
+
+It discovers every language from the Tatoeba index (~430), keeps those with at
+least `--min` sentences (default 200), caps each at `--max-sentences`, and
+splits `--train` sentences into `corpus/<code>/train.txt` with the remainder
+into `test/<code>.txt`. Pass `--langs eng,fra,jpn` to fetch a specific set.
+
+Coverage is uneven: as of writing ~219 languages clear the threshold, but only
+~85 have enough data (≥5k sentences) to be production-grade — the rest are a
+thin long tail. For those, supplement with Wikipedia / CC-100 / Leipzig.
+
+### Other sources (permissive licenses)
 
 - **Leipzig Corpora Collection** — per-language sentence packs, 250+ langs.
 - **CC-100 / OSCAR** — bulk CommonCrawl text, 100+ langs.
 - **Wikipedia dumps** — good tail-language coverage.
-- **Tatoeba** — short sentences, 400+ langs.
 
 Validate on held-out **FLORES-200**. Match your training domain to your input
 domain (e.g. informal/social text) for best accuracy.
