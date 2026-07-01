@@ -20,13 +20,20 @@ struct Args {
     model: PathBuf,
     #[arg(short, long)]
     input: PathBuf,
+    /// Cap each input to this many bytes before tokenizing.
+    #[arg(long)]
+    max_bytes: Option<usize>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let enc = Encoder::from_file(&args.tokenizer)?;
     let model = LangModel::load(&args.model)?;
-    let detector = Detector::new(Encoder::from_file(&args.tokenizer)?, model);
+    let mut detector = Detector::new(Encoder::from_file(&args.tokenizer)?, model);
+    if let Some(n) = args.max_bytes {
+        detector = detector.with_max_input_bytes(n);
+        println!("(capping inputs to {n} bytes)");
+    }
 
     let text = fs::read_to_string(&args.input)?;
     let lines: Vec<&str> = text

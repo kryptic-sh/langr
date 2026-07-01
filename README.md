@@ -117,6 +117,15 @@ bottleneck — parallelism and letting the compiler vectorize the tokenizer are.
 - **`target-cpu=native`** (in `.cargo/config.toml`) lets LLVM emit AVX2/AVX512
   (or NEON) across `langr` and its dependencies, including the tokenizer. Remove
   that file for portable binaries.
+- **`with_max_input_bytes(n)`** caps how much of each input is tokenized.
+  Detection is ~93–99% tokenization and cost scales with length, so on long text
+  a prefix bounds latency: on 1.3 KB paragraphs, capping to 512 B is ~3.3×
+  faster with the dominant language unchanged (longer docs win more). It biases
+  the mixture toward the prefix, so leave it off if you need faithful
+  full-document breakdowns.
+
+Detection also uses the tokenizer's offset-free `encode_fast` path and a
+thread-local accumulator, so the hot path allocates only the result.
 
 Measured with 43 languages held out from Tatoeba: **94% top-1 accuracy** on
 short single sentences (higher on longer text), 3.3 MB model, ~9.3 µs/detect

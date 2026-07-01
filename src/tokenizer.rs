@@ -25,10 +25,13 @@ impl Encoder {
     }
 
     /// Encode `text` into token ids, without special tokens.
+    ///
+    /// Uses `encode_fast`, which skips character-offset computation — we only
+    /// need the ids, and offset mapping is a large part of `encode`'s cost.
     pub fn encode(&self, text: &str) -> Result<Vec<u32>> {
         let enc = self
             .inner
-            .encode(text, false)
+            .encode_fast(text, false)
             .map_err(|e| anyhow!("encode: {e}"))?;
         Ok(enc.get_ids().to_vec())
     }

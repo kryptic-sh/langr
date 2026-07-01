@@ -4,16 +4,24 @@ use crate::model::LangModel;
 use crate::schema::{Detection, LangScore};
 use crate::tokenizer::Encoder;
 use anyhow::Result;
+use std::cell::RefCell;
 use std::path::Path;
 
 /// Default second-language share needed to flag input as multilingual.
 pub const DEFAULT_MULTILINGUAL_THRESHOLD: f32 = 0.15;
+
+thread_local! {
+    /// Per-thread reusable accumulator, so `detect` allocates no scratch on the
+    /// hot path (matters under `detect_batch`'s rayon fan-out).
+    static ACC: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
+}
 
 /// A loaded detector: a tokenizer plus its trained posterior table.
 pub struct Detector {
     encoder: Encoder,
     model: LangModel,
     multilingual_threshold: f32,
+    max_input_bytes: Option<usize>,
 }
 
 impl Detector {
@@ -23,6 +31,7 @@ impl Detector {
             encoder,
             model,
             multilingual_threshold: DEFAULT_MULTILINGUAL_THRESHOLD,
+            max_input_bytes: None,
         }
     }
 
@@ -39,8 +48,25 @@ impl Detector {
         self
     }
 
+    /// Only tokenize the first `bytes` of each input (rounded down to a char
+    /// boundary). Tokenization cost scales with length, so for long text a
+    /// prefix bounds latency with negligible accuracy loss on the dominant
+    /// language. Off by default (whole input is used).
+    ///
+    /// Note: this makes the mixture reflect the prefix, so a minority language
+    /// appearing only past the cutoff will be missed — leave it off if you need
+    /// faithful full-document mixtures.
+    pub fn with_max_input_bytes(mut self, bytes: usize) -> Self {
+        self.max_input_bytes = Some(bytes);
+        self
+    }
+
     /// Detect the language mixture of `text`.
     pub fn detect(&self, text: &str) -> Result<Detection> {
+        let text = match self.max_input_bytes {
+            Some(n) if text.len() > n => &text[..floor_char_boundary(text, n)],
+            _ => text,
+        };
         let ids = self.encoder.encode(text)?;
         Ok(self.detect_ids(&ids))
     }
@@ -61,56 +87,75 @@ impl Detector {
 }
 
 /// Aggregate per-token posteriors into a language mixture. Kept free-standing
-/// so it can be tested without a real tokenizer.
+/// so it can be tested without a real tokenizer. Uses a thread-local scratch
+/// accumulator to stay allocation-free on the hot path (bar the output vec).
 fn score(model: &LangModel, multilingual_threshold: f32, ids: &[u32]) -> Detection {
-    let mut acc = vec![0.0f32; model.langs.len()];
-    let mut weight_sum = 0.0f32;
-    let mut scored = 0usize;
+    ACC.with(|cell| {
+        let mut acc = cell.borrow_mut();
+        acc.clear();
+        acc.resize(model.langs.len(), 0.0);
 
-    for &id in ids {
-        let t = id as usize;
-        // Guard: model may have been trained against a smaller vocab.
-        if t >= model.token_weight.len() {
-            continue;
+        let mut weight_sum = 0.0f32;
+        let mut scored = 0usize;
+
+        for &id in ids {
+            let t = id as usize;
+            // Guard: model may have been trained against a smaller vocab.
+            if t >= model.token_weight.len() {
+                continue;
+            }
+            let w = model.token_weight[t];
+            let post = &model.token_post[t];
+            if w <= 0.0 || post.is_empty() {
+                continue;
+            }
+            weight_sum += w;
+            scored += 1;
+            for &(lang, p) in post {
+                acc[lang as usize] += w * p;
+            }
         }
-        let w = model.token_weight[t];
-        let post = &model.token_post[t];
-        if w <= 0.0 || post.is_empty() {
-            continue;
+
+        if weight_sum <= 0.0 {
+            return Detection::undetermined();
         }
-        weight_sum += w;
-        scored += 1;
-        for &(lang, p) in post {
-            acc[lang as usize] += w * p;
+
+        let mut languages: Vec<LangScore> = acc
+            .iter()
+            .enumerate()
+            .filter(|(_, &v)| v > 0.0)
+            .map(|(i, &v)| LangScore {
+                lang: model.langs[i].clone(),
+                score: v / weight_sum,
+            })
+            .collect();
+        languages.sort_by(|a, b| b.score.total_cmp(&a.score));
+
+        let top = languages[0].score;
+        let second = languages.get(1).map_or(0.0, |s| s.score);
+
+        Detection {
+            language: languages[0].lang.clone(),
+            confidence: top,
+            margin: top - second,
+            is_multilingual: second >= multilingual_threshold,
+            languages,
+            scored_tokens: scored,
         }
+    })
+}
+
+/// Largest index `<= max` that lies on a UTF-8 char boundary of `s`.
+/// (`str::floor_char_boundary` is still unstable.)
+fn floor_char_boundary(s: &str, max: usize) -> usize {
+    if max >= s.len() {
+        return s.len();
     }
-
-    if weight_sum <= 0.0 {
-        return Detection::undetermined();
+    let mut i = max;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
     }
-
-    let mut languages: Vec<LangScore> = acc
-        .iter()
-        .enumerate()
-        .filter(|(_, &v)| v > 0.0)
-        .map(|(i, &v)| LangScore {
-            lang: model.langs[i].clone(),
-            score: v / weight_sum,
-        })
-        .collect();
-    languages.sort_by(|a, b| b.score.total_cmp(&a.score));
-
-    let top = languages[0].score;
-    let second = languages.get(1).map_or(0.0, |s| s.score);
-
-    Detection {
-        language: languages[0].lang.clone(),
-        confidence: top,
-        margin: top - second,
-        is_multilingual: second >= multilingual_threshold,
-        languages,
-        scored_tokens: scored,
-    }
+    i
 }
 
 #[cfg(test)]
