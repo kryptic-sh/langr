@@ -2,12 +2,24 @@
 name = "langr"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.84"
 license = "MIT"
 description = "Fast, low-memory single-purpose language detector using an LLM subword vocab and token->language posteriors."
 repository = "https://github.com/kryptic-sh/langr"
 readme = "README.md"
 keywords = ["language", "detection", "nlp", "tokenizer", "langid"]
 categories = ["text-processing"]
+# Keep the published crate lean: repo tooling, generated notices, and model
+# artifacts are not part of the library.
+exclude = [
+  "/.github",
+  "/about.toml",
+  "/about.hbs",
+  "/deny.toml",
+  "/scripts",
+  "/models",
+  "/THIRD-PARTY-LICENSES.md",
+]
 
 [lib]
 name = "langr"
