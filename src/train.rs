@@ -70,11 +70,13 @@ pub fn train(
 
     // Drop empty languages so ids stay dense and valid.
     langs.retain(|l| l.total > 0);
-    if langs.is_empty() {
-        bail!("no tokens counted; is the corpus empty?");
-    }
     langs.sort_by(|a, b| a.code.cmp(&b.code));
     let num_langs = langs.len();
+    // Need >= 2 langs (with 1, entropy weights are all 0 -> an all-`und` model),
+    // and the count must fit LangId so `li as LangId` never truncates.
+    if !(2..=LangId::MAX as usize).contains(&num_langs) {
+        bail!("language count {num_langs} must be in 2..={}", LangId::MAX);
+    }
 
     // Which tokens are worth modeling.
     let mut token_totals: HashMap<u32, u64> = HashMap::new();

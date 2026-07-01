@@ -6,7 +6,7 @@
 //! are skipped at detection time. Storing only top-K keeps the table at a few
 //! MB instead of `vocab_size * num_langs` dense floats.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -59,6 +59,71 @@ impl LangModel {
                 model.version
             );
         }
+        model
+            .validate()
+            .with_context(|| format!("invalid model {}", path.display()))?;
         Ok(model)
+    }
+
+    /// Check the structural invariants that detection relies on, so a truncated
+    /// or malformed model fails at load instead of panicking mid-detection.
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.token_post.len() == self.vocab_size,
+            "token_post len {} != vocab_size {}",
+            self.token_post.len(),
+            self.vocab_size
+        );
+        ensure!(
+            self.token_weight.len() == self.vocab_size,
+            "token_weight len {} != vocab_size {}",
+            self.token_weight.len(),
+            self.vocab_size
+        );
+        let n = self.langs.len();
+        for (t, post) in self.token_post.iter().enumerate() {
+            for &(lang, _) in post {
+                ensure!(
+                    (lang as usize) < n,
+                    "token {t}: LangId {lang} out of range (langs.len() = {n})"
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> LangModel {
+        LangModel {
+            version: MODEL_VERSION,
+            langs: vec!["en".into(), "fr".into()],
+            top_k: 1,
+            vocab_size: 2,
+            token_post: vec![vec![(0, 1.0)], vec![(1, 1.0)]],
+            token_weight: vec![1.0, 1.0],
+        }
+    }
+
+    #[test]
+    fn validate_accepts_consistent_model() {
+        assert!(base().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_langid() {
+        let mut m = base();
+        m.token_post[0] = vec![(5, 1.0)];
+        assert!(m.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_length_mismatch() {
+        let mut m = base();
+        m.token_weight.pop();
+        assert!(m.validate().is_err());
     }
 }

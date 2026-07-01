@@ -115,8 +115,9 @@ fn score(model: &LangModel, multilingual_threshold: f32, ids: &[u32]) -> Detecti
 
         for &id in ids {
             let t = id as usize;
-            // Guard: model may have been trained against a smaller vocab.
-            if t >= model.token_weight.len() {
+            // Guard: model may have been trained against a smaller vocab, or be
+            // hand-built (skipping `LangModel::validate`); never index blindly.
+            if t >= model.token_weight.len() || t >= model.token_post.len() {
                 continue;
             }
             let w = model.token_weight[t];
@@ -127,7 +128,9 @@ fn score(model: &LangModel, multilingual_threshold: f32, ids: &[u32]) -> Detecti
             weight_sum += w;
             scored += 1;
             for &(lang, p) in post {
-                acc[lang as usize] += w * p;
+                if let Some(slot) = acc.get_mut(lang as usize) {
+                    *slot += w * p;
+                }
             }
         }
 
@@ -208,5 +211,16 @@ mod tests {
         assert_eq!(d.language, "fr");
         assert!((d.confidence - 1.0).abs() < 1e-6);
         assert!(!d.is_multilingual);
+    }
+
+    #[test]
+    fn score_tolerates_corrupt_model_without_panicking() {
+        let mut m = toy_model();
+        m.token_post[1] = vec![(99, 1.0)]; // LangId past langs.len(): must be skipped
+        let d = score(&m, DEFAULT_MULTILINGUAL_THRESHOLD, &[1, 2, 2]);
+        assert_eq!(d.language, "en"); // bad-lang token skipped, en still wins
+                                      // Token id beyond the table length must also not panic.
+        let d = score(&m, DEFAULT_MULTILINGUAL_THRESHOLD, &[9999]);
+        assert_eq!(d.language, crate::schema::UNDETERMINED);
     }
 }

@@ -41,6 +41,10 @@ fn main() -> Result<()> {
         .filter(|l| !l.is_empty())
         .collect();
     let n = lines.len();
+    if n == 0 {
+        eprintln!("no non-empty lines in {}", args.input.display());
+        return Ok(());
+    }
 
     // Phase 1: tokenization only.
     let t0 = Instant::now();
