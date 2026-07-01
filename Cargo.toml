@@ -26,9 +26,16 @@ name = "langr-corpus"
 path = "src/bin/corpus.rs"
 required-features = ["corpus"]
 
+[[bin]]
+name = "langr-pack"
+path = "src/bin/pack.rs"
+required-features = ["pack"]
+
 [features]
-# Opt-in corpus downloader; keeps the HTTP/bzip2/xz/gzip stack out of detection-only builds.
-corpus = ["dep:ureq", "dep:bzip2-rs", "dep:xz2", "dep:flate2"]
+# Opt-in corpus downloader; keeps the HTTP/bzip2/xz/gzip/tar stack out of detection-only builds.
+corpus = ["dep:ureq", "dep:bzip2-rs", "dep:xz2", "dep:flate2", "dep:tar"]
+# Opt-in packaging helper (model/tokenizer hashing for a release manifest).
+pack = ["dep:sha2"]
 
 [dependencies]
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
@@ -42,6 +49,8 @@ ureq = { version = "2", optional = true }
 bzip2-rs = { version = "0.1", optional = true }
 xz2 = { version = "0.1", optional = true }
 flate2 = { version = "1", optional = true }
+tar = { version = "0.4", optional = true }
+sha2 = { version = "0.10", optional = true }
 
 [profile.release]
 lto = "thin"

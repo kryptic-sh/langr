@@ -14,6 +14,8 @@
 //!   formal register with broad tail coverage; mapped to 639-3.
 //! - **cc100** — CommonCrawl-derived monolingual text (xz plaintext); raw web
 //!   crawl, noisy — clean before use.
+//! - **flores** — FLORES-200 devtest, an eval-only set (not a training source);
+//!   written to `<test_out>/flores/<code>.txt` for neutral evaluation.
 //!
 //! Downloads run in parallel with retries; failures are reported, never
 //! silently dropped. Enable with `--features corpus`.
@@ -30,7 +32,8 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(about = "Download and prepare a training corpus (639-3 labels)")]
 struct Args {
-    /// Sources: `tatoeba`, `opensubtitles`, `wikipedia`, `cc100` (comma-sep).
+    /// Sources: `tatoeba`, `opensubtitles`, `wikipedia`, `cc100`, and `flores`
+    /// (eval-only) (comma-separated).
     #[arg(long, value_delimiter = ',', default_value = "tatoeba")]
     source: Vec<String>,
     /// Base URL for Tatoeba per-language exports.
@@ -39,6 +42,12 @@ struct Args {
         default_value = "https://downloads.tatoeba.org/exports/per_language"
     )]
     tatoeba_url: String,
+    /// URL of the FLORES-200 dataset tarball (eval-only source).
+    #[arg(
+        long,
+        default_value = "https://dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz"
+    )]
+    flores_url: String,
     /// Output corpus root (one subdir per language).
     #[arg(short, long, default_value = "corpus")]
     out: PathBuf,
@@ -102,21 +111,22 @@ fn main() -> Result<()> {
     for source in &args.source {
         match source.as_str() {
             "tatoeba" => jobs.extend(tatoeba_jobs(&agent, &args)?),
+            "flores" => fetch_flores(&agent, &args)?,
             name => match FIXED_SOURCES.iter().find(|s| s.name == name) {
                 Some(spec) => jobs.extend(fixed_source_jobs(spec, &args.langs)),
                 None => {
                     return Err(anyhow!(
-                        "unknown source '{name}' (want tatoeba|opensubtitles|wikipedia|cc100)"
+                        "unknown source '{name}' \
+                         (want tatoeba|opensubtitles|wikipedia|cc100|flores)"
                     ))
                 }
             },
         }
     }
-    eprintln!(
-        "{} download jobs across {} source(s)",
-        jobs.len(),
-        args.source.len()
-    );
+    if jobs.is_empty() {
+        return Ok(()); // e.g. only the eval-only `flores` source was requested
+    }
+    eprintln!("{} download jobs queued", jobs.len());
 
     std::fs::create_dir_all(&args.out)?;
     if !args.no_test {
@@ -240,6 +250,76 @@ fn fixed_source_jobs(spec: &'static SourceSpec, filter: &[String]) -> Vec<Job> {
             tsv_col: None,
         })
         .collect()
+}
+
+/// Map a FLORES-200 file's 639-3 base code to our label (FLORES uses some
+/// different 639-3 choices than Tatoeba for the same language).
+fn flores_alias(base: &str) -> &str {
+    match base {
+        "arb" => "ara",
+        "zho" => "cmn",
+        "azj" => "aze",
+        "ydd" => "yid",
+        "khk" => "mon",
+        "swh" => "swc",
+        other => other,
+    }
+}
+
+/// FLORES-200 is an eval set shipped as one tarball. Stream it, extract the
+/// `devtest/<lang>_<Script>.devtest` files, map codes to 639-3, and write each
+/// as a held-out test set under `<test_out>/flores/<code>.txt`.
+fn fetch_flores(agent: &ureq::Agent, args: &Args) -> Result<()> {
+    let out = args.test_out.join("flores");
+    std::fs::create_dir_all(&out)?;
+    eprintln!("downloading FLORES-200 from {}", args.flores_url);
+
+    let resp = agent
+        .get(&args.flores_url)
+        .call()
+        .map_err(|e| anyhow!("{e}"))?;
+    let gz = flate2::read::GzDecoder::new(resp.into_reader());
+    let mut archive = tar::Archive::new(gz);
+
+    let mut seen = std::collections::BTreeSet::new();
+    let mut written = 0usize;
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.to_string_lossy().into_owned();
+        let Some(fname) = path.rsplit('/').next() else {
+            continue;
+        };
+        if !path.contains("/devtest/") || !fname.ends_with(".devtest") {
+            continue;
+        }
+        let base = fname
+            .trim_end_matches(".devtest")
+            .split('_')
+            .next()
+            .unwrap_or("");
+        let code = flores_alias(base).to_string();
+        if code.len() != 3 || seen.contains(&code) {
+            continue;
+        }
+        if !args.langs.is_empty() && !args.langs.contains(&code) {
+            continue;
+        }
+        let mut text = String::new();
+        entry.read_to_string(&mut text)?;
+        let lines: Vec<String> = text
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        if lines.len() < args.min {
+            continue;
+        }
+        seen.insert(code.clone());
+        write_lines(&out.join(format!("{code}.txt")), &lines)?;
+        written += 1;
+    }
+    eprintln!("flores: wrote {written} eval sets -> {}", out.display());
+    Ok(())
 }
 
 /// Parse the Tatoeba autoindex for 3-letter language directory names.
