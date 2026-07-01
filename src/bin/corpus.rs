@@ -22,7 +22,7 @@ use anyhow::{anyhow, Context, Result};
 use bzip2_rs::DecoderReader;
 use clap::Parser;
 use rayon::prelude::*;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -339,12 +339,16 @@ fn write_split(args: &Args, job: &Job, sents: &[String]) -> Result<()> {
 }
 
 fn write_lines(path: &Path, lines: &[String]) -> Result<()> {
-    let mut body = lines.join("\n");
-    body.push('\n');
-    std::fs::write(path, body).with_context(|| format!("write {}", path.display()))
+    let file = std::fs::File::create(path).with_context(|| format!("create {}", path.display()))?;
+    let mut w = std::io::BufWriter::new(file);
+    for line in lines {
+        writeln!(w, "{line}").with_context(|| format!("write {}", path.display()))?;
+    }
+    Ok(())
 }
 
-/// CC-100 language file code -> ISO 639-3 output code. Specific codes match
+/// CC-100 language file code -> ISO 639-3 output code. One file per label
+/// (zh-Hant dropped so it can't overwrite zh-Hans->cmn). Specific codes match
 /// Tatoeba's (pes, kmr, lvs, zsm, nob, cmn) so the two sources merge.
 #[rustfmt::skip]
 const CC100_LANGS: &[(&str, &str)] = &[
@@ -369,13 +373,13 @@ const CC100_LANGS: &[(&str, &str)] = &[
     ("sv", "swe"), ("sw", "swh"), ("ta", "tam"), ("te", "tel"), ("th", "tha"),
     ("tl", "tgl"), ("tn", "tsn"), ("tr", "tur"), ("ug", "uig"), ("uk", "ukr"),
     ("ur", "urd"), ("uz", "uzb"), ("vi", "vie"), ("wo", "wol"), ("xh", "xho"),
-    ("yi", "yid"), ("yo", "yor"), ("zh-Hans", "cmn"), ("zh-Hant", "cmn"),
-    ("zu", "zul"),
+    ("yi", "yid"), ("yo", "yor"), ("zh-Hans", "cmn"), ("zu", "zul"),
 ];
 
-/// OPUS OpenSubtitles file code -> ISO 639-3 output code. Regional variants
-/// (pt/pt_br, zh_cn/zh_tw) fold into one 639-3 label; specifics match Tatoeba's
-/// (pes, nob, zsm, cmn, lvs) so sources merge.
+/// OPUS OpenSubtitles file code -> ISO 639-3 output code. One file per label:
+/// regional variants (pt_br, zh_tw) are dropped so two file codes never map to
+/// the same iso and overwrite each other's output. Specific codes match
+/// Tatoeba's (pes, nob, zsm, cmn, lvs) so sources merge.
 #[rustfmt::skip]
 const OPENSUB_LANGS: &[(&str, &str)] = &[
     ("af", "afr"), ("ar", "ara"), ("bg", "bul"), ("bn", "ben"), ("br", "bre"),
@@ -386,10 +390,10 @@ const OPENSUB_LANGS: &[(&str, &str)] = &[
     ("id", "ind"), ("is", "isl"), ("it", "ita"), ("ja", "jpn"), ("ka", "kat"),
     ("kk", "kaz"), ("ko", "kor"), ("lt", "lit"), ("lv", "lvs"), ("mk", "mkd"),
     ("ml", "mal"), ("ms", "zsm"), ("nl", "nld"), ("no", "nob"), ("pl", "pol"),
-    ("pt", "por"), ("pt_br", "por"), ("ro", "ron"), ("ru", "rus"), ("si", "sin"),
+    ("pt", "por"), ("ro", "ron"), ("ru", "rus"), ("si", "sin"),
     ("sk", "slk"), ("sl", "slv"), ("sq", "sqi"), ("sr", "srp"), ("sv", "swe"),
     ("ta", "tam"), ("te", "tel"), ("th", "tha"), ("tl", "tgl"), ("tr", "tur"),
-    ("uk", "ukr"), ("ur", "urd"), ("vi", "vie"), ("zh_cn", "cmn"), ("zh_tw", "cmn"),
+    ("uk", "ukr"), ("ur", "urd"), ("vi", "vie"), ("zh_cn", "cmn"),
 ];
 
 /// OPUS Wikipedia file code -> ISO 639-3 output code. Specific codes match
