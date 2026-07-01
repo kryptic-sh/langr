@@ -1,0 +1,46 @@
+# cargo-deny configuration — https://embarkstudios.github.io/cargo-deny/
+# Run via the weekly Cron workflow (advisories change over time, so this is not
+# a per-PR gate). Locally: `cargo deny --all-features check`.
+
+[advisories]
+db-urls = ["https://github.com/RustSec/advisory-db"]
+yanked = "warn"
+ignore = [
+  # `paste` is unmaintained (no vuln, no safe upgrade). It is a compile-time
+  # proc-macro helper pulled transitively via tokenizers -> macro_rules_attribute,
+  # with no runtime attack surface. Revisit when tokenizers drops it.
+  { id = "RUSTSEC-2024-0436", reason = "unmaintained compile-time dep via tokenizers; no upgrade path" },
+  # `bincode` 1.3 is unmaintained (no vuln). It is our direct model-serialization
+  # dep. Tracked for migration to bincode 2.x; ignored until then.
+  { id = "RUSTSEC-2025-0141", reason = "unmaintained; bincode 2.x migration tracked separately" },
+]
+
+[licenses]
+# langr and its dependency tree are permissive-only. This list mirrors the
+# accepted set in about.toml (the cargo-about notice generator).
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unlicense",
+  "BSL-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
