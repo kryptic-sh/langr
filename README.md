@@ -8,10 +8,10 @@ aggregates a trained `token -> P(language)` table into a language mixture. No
 neural net runs at inference time — just tokenize and sum.
 
 - **Fast** — tokenize + a handful of adds per token. Microsecond range.
-- **Low memory** — the model stores only the top-K languages per token, a few
-  MB instead of a dense `vocab x languages` matrix.
-- **Mixture-aware** — returns the full language breakdown with shares, so
-  "80% French, 20% English" falls out directly.
+- **Low memory** — the model stores only the top-K languages per token, a few MB
+  instead of a dense `vocab x languages` matrix.
+- **Mixture-aware** — returns the full language breakdown with shares, so "80%
+  French, 20% English" falls out directly.
 
 ## How it works
 
@@ -41,12 +41,12 @@ noise.
 ```json
 {
   "language": "fr",
-  "confidence": 0.80,
-  "margin": 0.60,
+  "confidence": 0.8,
+  "margin": 0.6,
   "is_multilingual": true,
   "languages": [
-    { "lang": "fr", "score": 0.80 },
-    { "lang": "en", "score": 0.20 }
+    { "lang": "fr", "score": 0.8 },
+    { "lang": "en", "score": 0.2 }
   ],
   "scored_tokens": 10
 }
@@ -68,8 +68,8 @@ cargo run --release --bin langr-detect -- \
   "Bonjour le monde, this is a small test."
 ```
 
-The bundled `sample-corpus/` is only a smoke test. For real accuracy, train on
-a proper multilingual corpus — see below.
+The bundled `sample-corpus/` is only a smoke test. For real accuracy, train on a
+proper multilingual corpus — see below.
 
 ## Training corpus
 
@@ -104,7 +104,42 @@ println!("{} ({:.0}%)", result.language, result.confidence * 100.0);
 # Ok::<(), anyhow::Error>(())
 ```
 
+## Licensing & data
+
+`langr` ships **code only**. It bundles no vocab, no corpus, and no trained
+model — you fetch a tokenizer and bring your own training data. This keeps the
+repository cleanly MIT with no third-party data-license entanglement.
+
+- **Code + Rust dependencies** — all permissive (MIT / Apache-2.0 / BSD / Zlib /
+  Unlicense / BSL / Unicode). No copyleft. The source is MIT.
+- **Tokenizer vocab** — a _runtime input_ you fetch, not a bundled asset.
+  Qwen3's is Apache-2.0. Used with MIT code that is fine; just don't commit or
+  relicense it (the repo `.gitignore`s `tokenizer.json`).
+- **Training corpora** — bring your own. Note many common corpora are **not**
+  freely redistributable: Leipzig is CC BY-NC (non-commercial), Wikipedia and
+  FLORES-200 are CC BY-SA (share-alike), CC-100 / OSCAR carry CommonCrawl
+  third-party copyright. Tatoeba (CC BY) and UDHR (public domain) are the
+  redistributable ones. The repo `.gitignore`s `/corpus/`.
+- **Trained `model.bin`** — a derivative statistical table. Whether it counts as
+  a derivative of the corpus is legally unsettled; the repo `.gitignore`s
+  `*.bin`. If you publish a pretrained model, do it as a **separate release
+  artifact** (not in this MIT source tree), trained only on permissive data,
+  with its own notice.
+
+### Third-party notices
+
+Binaries statically compile the dependencies. Generate the bundled-license
+notice file before distributing binaries:
+
+```sh
+cargo install cargo-about   # once
+./scripts/gen-notices.sh    # writes THIRD-PARTY-LICENSES.md
+```
+
+The accepted-license allowlist lives in `about.toml`; `cargo about` fails if a
+dependency ever introduces a license not on it, so copyleft can't slip in
+unnoticed.
+
 ## License
 
-MIT. The tokenizer vocab you fetch has its own license — Qwen3's is Apache-2.0.
-`langr` does not bundle any vocab.
+MIT — see [`LICENSE`](LICENSE).

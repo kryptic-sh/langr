@@ -1,0 +1,19 @@
+# Third-party licenses
+
+`langr` itself is MIT (see `LICENSE`). The binaries compile in the dependencies
+below; their licenses are reproduced here. This file is generated — do not edit
+by hand. Regenerate with `./scripts/gen-notices.sh`.
+
+{{#each licenses}}
+## {{name}}
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+````
+{{{text}}}
+````
+
+{{/each}}
