@@ -5,11 +5,13 @@
 //! <out>/<code>/<source>.txt      <test-out>/<code>.txt
 //! ```
 //!
-//! Sources:
-//! - **tatoeba** — per-language sentence exports (bz2 TSV), discovered from the
+//! Sources (mix registers for robustness — formal + conversational):
+//! - **tatoeba** — clean per-language sentences (bz2 TSV), discovered from the
 //!   site index; codes are already 639-3.
-//! - **cc100** — CommonCrawl-derived monolingual text (xz plaintext) from a
-//!   fixed language list, mapped to 639-3 (merging into the same dirs).
+//! - **opensubtitles** — conversational movie/TV subtitles (gzip plaintext,
+//!   OPUS), the informal/slang-adjacent register; mapped to 639-3.
+//! - **cc100** — CommonCrawl-derived monolingual text (xz plaintext); raw web
+//!   crawl, noisy — clean before use.
 //!
 //! Downloads run in parallel with retries; failures are reported, never
 //! silently dropped. Enable with `--features corpus`.
@@ -26,7 +28,7 @@ use std::time::Duration;
 #[derive(Parser)]
 #[command(about = "Download and prepare a training corpus (639-3 labels)")]
 struct Args {
-    /// Sources to pull: `tatoeba`, `cc100` (comma-separated).
+    /// Sources to pull: `tatoeba`, `opensubtitles`, `cc100` (comma-separated).
     #[arg(long, value_delimiter = ',', default_value = "tatoeba")]
     source: Vec<String>,
     /// Base URL for Tatoeba per-language exports.
@@ -38,6 +40,12 @@ struct Args {
     /// Base URL for CC-100 monolingual files.
     #[arg(long, default_value = "https://data.statmt.org/cc-100")]
     cc100_url: String,
+    /// Base URL for OPUS OpenSubtitles monolingual files.
+    #[arg(
+        long,
+        default_value = "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono"
+    )]
+    opensubtitles_url: String,
     /// Output corpus root (one subdir per language).
     #[arg(short, long, default_value = "corpus")]
     out: PathBuf,
@@ -71,6 +79,7 @@ struct Args {
 enum Decomp {
     Bzip2,
     Xz,
+    Gzip,
 }
 
 /// One download unit: a source URL producing sentences for one 639-3 code.
@@ -101,7 +110,12 @@ fn main() -> Result<()> {
         match source.as_str() {
             "tatoeba" => jobs.extend(tatoeba_jobs(&agent, &args)?),
             "cc100" => jobs.extend(cc100_jobs(&args)),
-            other => return Err(anyhow!("unknown source '{other}' (want tatoeba|cc100)")),
+            "opensubtitles" => jobs.extend(opensubtitles_jobs(&args)),
+            other => {
+                return Err(anyhow!(
+                    "unknown source '{other}' (want tatoeba|opensubtitles|cc100)"
+                ))
+            }
         }
     }
     eprintln!(
@@ -199,6 +213,22 @@ fn cc100_jobs(args: &Args) -> Vec<Job> {
         .collect()
 }
 
+/// Build OpenSubtitles jobs from the fixed OPUS language list, mapped to 639-3.
+fn opensubtitles_jobs(args: &Args) -> Vec<Job> {
+    let base = args.opensubtitles_url.trim_end_matches('/');
+    OPENSUB_LANGS
+        .iter()
+        .filter(|(_, iso)| args.langs.is_empty() || args.langs.iter().any(|l| l == iso))
+        .map(|(os, iso)| Job {
+            code: (*iso).to_string(),
+            url: format!("{base}/{os}.txt.gz"),
+            source: "opensubtitles",
+            decomp: Decomp::Gzip,
+            tsv_col: None,
+        })
+        .collect()
+}
+
 /// Parse the Tatoeba autoindex for 3-letter language directory names.
 fn discover_tatoeba(agent: &ureq::Agent, base_url: &str) -> Result<Vec<String>> {
     let url = format!("{}/", base_url.trim_end_matches('/'));
@@ -252,6 +282,7 @@ fn download(agent: &ureq::Agent, job: &Job, max: usize) -> Result<Vec<String>> {
     let decoded: Box<dyn Read> = match job.decomp {
         Decomp::Bzip2 => Box::new(DecoderReader::new(raw)),
         Decomp::Xz => Box::new(xz2::read::XzDecoder::new(raw)),
+        Decomp::Gzip => Box::new(flate2::read::GzDecoder::new(raw)),
     };
     let reader = BufReader::new(decoded);
 
@@ -326,4 +357,23 @@ const CC100_LANGS: &[(&str, &str)] = &[
     ("ur", "urd"), ("uz", "uzb"), ("vi", "vie"), ("wo", "wol"), ("xh", "xho"),
     ("yi", "yid"), ("yo", "yor"), ("zh-Hans", "cmn"), ("zh-Hant", "cmn"),
     ("zu", "zul"),
+];
+
+/// OPUS OpenSubtitles file code -> ISO 639-3 output code. Regional variants
+/// (pt/pt_br, zh_cn/zh_tw) fold into one 639-3 label; specifics match Tatoeba's
+/// (pes, nob, zsm, cmn, lvs) so sources merge.
+#[rustfmt::skip]
+const OPENSUB_LANGS: &[(&str, &str)] = &[
+    ("af", "afr"), ("ar", "ara"), ("bg", "bul"), ("bn", "ben"), ("br", "bre"),
+    ("bs", "bos"), ("ca", "cat"), ("cs", "ces"), ("da", "dan"), ("de", "deu"),
+    ("el", "ell"), ("en", "eng"), ("eo", "epo"), ("es", "spa"), ("et", "est"),
+    ("eu", "eus"), ("fa", "pes"), ("fi", "fin"), ("fr", "fra"), ("gl", "glg"),
+    ("he", "heb"), ("hi", "hin"), ("hr", "hrv"), ("hu", "hun"), ("hy", "hye"),
+    ("id", "ind"), ("is", "isl"), ("it", "ita"), ("ja", "jpn"), ("ka", "kat"),
+    ("kk", "kaz"), ("ko", "kor"), ("lt", "lit"), ("lv", "lvs"), ("mk", "mkd"),
+    ("ml", "mal"), ("ms", "zsm"), ("nl", "nld"), ("no", "nob"), ("pl", "pol"),
+    ("pt", "por"), ("pt_br", "por"), ("ro", "ron"), ("ru", "rus"), ("si", "sin"),
+    ("sk", "slk"), ("sl", "slv"), ("sq", "sqi"), ("sr", "srp"), ("sv", "swe"),
+    ("ta", "tam"), ("te", "tel"), ("th", "tha"), ("tl", "tgl"), ("tr", "tur"),
+    ("uk", "ukr"), ("ur", "urd"), ("vi", "vie"), ("zh_cn", "cmn"), ("zh_tw", "cmn"),
 ];

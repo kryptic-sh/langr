@@ -94,11 +94,30 @@ parallel with retries and report failures — no silent truncation. Two sources:
 cargo run --release --features corpus --bin langr-corpus -- \
   --source tatoeba --out corpus --test-out test --jobs 10
 
-# CC-100: CommonCrawl monolingual text (xz), ~100 languages, merged by 639-3.
-# --no-test augments an existing corpus without touching its test split.
+# OpenSubtitles: conversational subtitles (gzip, OPUS), the informal register.
+# Separate --test-out keeps the informal held-out set apart from the formal one.
+cargo run --release --features corpus --bin langr-corpus -- \
+  --source opensubtitles --out corpus --test-out test-informal --jobs 8
+
+# CC-100: CommonCrawl monolingual text (xz); raw web crawl — clean before use.
 cargo run --release --features corpus --bin langr-corpus -- \
   --source cc100 --out corpus --no-test --max-sentences 30000 --jobs 10
 ```
+
+### Mixing registers (formal + informal)
+
+To stay reliable on both proper grammar and casual/slang text, blend a clean
+formal source (Tatoeba, Wikipedia) with a clean informal one (OpenSubtitles),
+balanced to a similar size per language, and **test on both registers**. Adding
+OpenSubtitles to a Tatoeba model, measured on held-out sets of each register:
+
+| Model                   | Formal (Tatoeba) | Informal (subtitles) |
+| ----------------------- | ---------------- | -------------------- |
+| Tatoeba only            | 87.5%            | 66.1%                |
+| Tatoeba + OpenSubtitles | 86.4%            | **75.1%**            |
+
+Informal accuracy jumps ~9 points for a ~1-point formal cost — because subtitles
+are _clean_ informal register. Contrast with raw CC-100 below.
 
 Tatoeba discovers every language from its index (~430), keeps those with at
 least `--min` sentences, caps at `--max-sentences`, and splits `--train` into

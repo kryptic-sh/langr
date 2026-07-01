@@ -540,6 +540,7 @@ dependencies = [
  "bincode",
  "bzip2-rs",
  "clap",
+ "flate2",
  "rayon",
  "serde",
  "serde_json",
