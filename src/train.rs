@@ -60,13 +60,22 @@ struct LangCounts {
 }
 
 /// Train a [`LangModel`] from `corpus_root` using `encoder`.
-pub fn train(
+///
+/// `on_language` is invoked once per language as its count finishes, with the
+/// code and its token total, so the caller controls progress reporting (the
+/// library itself does no I/O to stdout/stderr). It is called from rayon
+/// workers, hence the `Sync` bound. Pass `|_, _| {}` for no reporting.
+pub fn train<F>(
     corpus_root: impl AsRef<Path>,
     encoder: &Encoder,
     cfg: &TrainConfig,
-) -> Result<LangModel> {
+    on_language: F,
+) -> Result<LangModel>
+where
+    F: Fn(&str, u64) + Sync,
+{
     let vocab_size = encoder.vocab_size();
-    let mut langs = count_corpus(corpus_root.as_ref(), encoder, cfg)?;
+    let mut langs = count_corpus(corpus_root.as_ref(), encoder, cfg, &on_language)?;
 
     // Drop empty languages so ids stay dense and valid.
     langs.retain(|l| l.total > 0);
@@ -158,7 +167,12 @@ pub fn train(
 /// Walk the corpus and count token frequencies per language, one language per
 /// rayon worker. Tokenization dominates training cost, so this scales roughly
 /// linearly with cores while the number of languages exceeds the core count.
-fn count_corpus(root: &Path, encoder: &Encoder, cfg: &TrainConfig) -> Result<Vec<LangCounts>> {
+fn count_corpus<F: Fn(&str, u64) + Sync>(
+    root: &Path,
+    encoder: &Encoder,
+    cfg: &TrainConfig,
+    on_language: &F,
+) -> Result<Vec<LangCounts>> {
     let mut dirs: Vec<(String, PathBuf)> = Vec::new();
     for entry in
         fs::read_dir(root).with_context(|| format!("read corpus dir {}", root.display()))?
@@ -179,7 +193,7 @@ fn count_corpus(root: &Path, encoder: &Encoder, cfg: &TrainConfig) -> Result<Vec
                 total: 0,
             };
             count_lang_dir(path, encoder, cfg, &mut lang)?;
-            eprintln!("  {}: {} tokens", lang.code, lang.total);
+            on_language(&lang.code, lang.total);
             Ok(lang)
         })
         .collect()

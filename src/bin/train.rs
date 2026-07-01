@@ -53,14 +53,15 @@ fn main() -> Result<()> {
     };
 
     eprintln!("counting corpus {}", args.corpus.display());
-    let model = train(&args.corpus, &encoder, &cfg)?;
+    let model = train(&args.corpus, &encoder, &cfg, |code, total| {
+        eprintln!("  {code}: {total} tokens");
+    })?;
 
-    let modeled = model.token_weight.iter().filter(|&&w| w > 0.0).count();
     eprintln!(
         "languages: {}, modeled tokens: {}/{}",
-        model.langs.len(),
-        modeled,
-        model.vocab_size
+        model.languages().len(),
+        model.modeled_tokens(),
+        model.vocab_size()
     );
 
     model.save(&args.out)?;

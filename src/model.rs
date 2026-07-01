@@ -23,18 +23,18 @@ pub type Posterior = Vec<(LangId, f32)>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LangModel {
     /// Format version guard.
-    pub version: u32,
+    pub(crate) version: u32,
     /// Language codes; a `LangId` indexes into this.
-    pub langs: Vec<String>,
+    pub(crate) langs: Vec<String>,
     /// How many languages were kept per token at training time. Stored as
     /// metadata only — detection reads whatever each posterior slice contains.
-    pub top_k: usize,
+    pub(crate) top_k: usize,
     /// Tokenizer vocab size the table was built against.
-    pub vocab_size: usize,
+    pub(crate) vocab_size: usize,
     /// `token_id -> top-K posterior`. Length == `vocab_size`.
-    pub token_post: Vec<Posterior>,
+    pub(crate) token_post: Vec<Posterior>,
     /// `token_id -> discriminative weight` in `[0, 1]`. Length == `vocab_size`.
-    pub token_weight: Vec<f32>,
+    pub(crate) token_weight: Vec<f32>,
 }
 
 impl LangModel {
@@ -90,6 +90,21 @@ impl LangModel {
             }
         }
         Ok(())
+    }
+
+    /// Language codes the model can emit, indexed by `LangId`.
+    pub fn languages(&self) -> &[String] {
+        &self.langs
+    }
+
+    /// Tokenizer vocabulary size the table was built against.
+    pub fn vocab_size(&self) -> usize {
+        self.vocab_size
+    }
+
+    /// Number of vocabulary tokens that carry any language signal.
+    pub fn modeled_tokens(&self) -> usize {
+        self.token_weight.iter().filter(|&&w| w > 0.0).count()
     }
 }
 
