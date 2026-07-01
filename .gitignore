@@ -1,0 +1,9 @@
+/target
+
+# Trained artifacts and vendored tokenizer (fetched, not committed)
+*.bin
+tokenizer.json
+/models/
+
+# Local training corpora (bring your own)
+/corpus/
