@@ -95,9 +95,9 @@ cargo run --release --features corpus --bin langr-corpus -- \
   --source tatoeba --out corpus --test-out test --jobs 10
 
 # OpenSubtitles: conversational subtitles (gzip, OPUS), the informal register.
-# Separate --test-out keeps the informal held-out set apart from the formal one.
+# Test files are namespaced per source, so this won't clobber Tatoeba's split.
 cargo run --release --features corpus --bin langr-corpus -- \
-  --source opensubtitles --out corpus --test-out test-informal --jobs 8
+  --source opensubtitles --out corpus --test-out test --jobs 8
 
 # CC-100: CommonCrawl monolingual text (xz); raw web crawl — clean before use.
 cargo run --release --features corpus --bin langr-corpus -- \
@@ -130,7 +130,9 @@ blend.** Two sources that did _not_ help:
 
 Tatoeba discovers every language from its index (~430), keeps those with at
 least `--min` sentences, caps at `--max-sentences`, and splits `--train` into
-`corpus/<code>/tatoeba.txt` with the remainder into `test/<code>.txt`. Pass
+`corpus/<code>/tatoeba.txt` with the remainder into `test/tatoeba/<code>.txt`
+(test files are namespaced by source). Eval a register with
+`--test-dir test/tatoeba` or `--test-dir test/opensubtitles`. Pass
 `--langs eng,fra,jpn` to fetch a specific set.
 
 Coverage is uneven: ~219 languages clear the Tatoeba threshold, but only ~85

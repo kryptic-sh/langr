@@ -2,7 +2,7 @@
 //! uniform 3-char ISO 639-3 codes, in the [`langr-train`] layout:
 //!
 //! ```text
-//! <out>/<code>/<source>.txt      <test-out>/<code>.txt
+//! <out>/<code>/<source>.txt      <test-out>/<source>/<code>.txt
 //! ```
 //!
 //! Sources (mix registers for robustness — formal + conversational):
@@ -42,7 +42,7 @@ struct Args {
     /// Output corpus root (one subdir per language).
     #[arg(short, long, default_value = "corpus")]
     out: PathBuf,
-    /// Output directory for held-out test files (`<code>.txt`).
+    /// Output root for held-out test files (`<test_out>/<source>/<code>.txt`).
     #[arg(long, default_value = "test")]
     test_out: PathBuf,
     /// Max sentences to keep per language per source.
@@ -191,7 +191,6 @@ fn tatoeba_jobs(agent: &ureq::Agent, args: &Args) -> Result<Vec<Job>> {
         .collect())
 }
 
-/// Build CC-100 jobs from the fixed language list, mapped to 639-3.
 /// A fixed-list download source: one host, one archive format, a static
 /// `file-code -> 639-3` table. Contrast with Tatoeba, which discovers its codes.
 struct SourceSpec {
@@ -330,8 +329,12 @@ fn write_split(args: &Args, job: &Job, sents: &[String]) -> Result<()> {
     let split = args.train.min(sents.len());
     write_lines(&file, &sents[..split])?;
     if sents.len() > args.train {
+        // Test files live under a per-source subdir so two sources in one run
+        // never overwrite each other's held-out set for a shared language.
+        let test_dir = args.test_out.join(job.source);
+        std::fs::create_dir_all(&test_dir)?;
         write_lines(
-            &args.test_out.join(format!("{}.txt", job.code)),
+            &test_dir.join(format!("{}.txt", job.code)),
             &sents[args.train..],
         )?;
     }
