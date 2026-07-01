@@ -1,5 +1,7 @@
 # langr
 
+[![CI](https://github.com/kryptic-sh/langr/actions/workflows/ci.yml/badge.svg)](https://github.com/kryptic-sh/langr/actions/workflows/ci.yml)
+
 Fast, low-memory, single-purpose **language detector** for Rust.
 
 `langr` borrows an LLM's subword vocabulary (a HuggingFace `tokenizer.json`,
