@@ -39,21 +39,6 @@ struct Args {
         default_value = "https://downloads.tatoeba.org/exports/per_language"
     )]
     tatoeba_url: String,
-    /// Base URL for CC-100 monolingual files.
-    #[arg(long, default_value = "https://data.statmt.org/cc-100")]
-    cc100_url: String,
-    /// Base URL for OPUS OpenSubtitles monolingual files.
-    #[arg(
-        long,
-        default_value = "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono"
-    )]
-    opensubtitles_url: String,
-    /// Base URL for OPUS Wikipedia monolingual files.
-    #[arg(
-        long,
-        default_value = "https://object.pouta.csc.fi/OPUS-Wikipedia/v1.0/mono"
-    )]
-    wikipedia_url: String,
     /// Output corpus root (one subdir per language).
     #[arg(short, long, default_value = "corpus")]
     out: PathBuf,
@@ -117,14 +102,14 @@ fn main() -> Result<()> {
     for source in &args.source {
         match source.as_str() {
             "tatoeba" => jobs.extend(tatoeba_jobs(&agent, &args)?),
-            "cc100" => jobs.extend(cc100_jobs(&args)),
-            "opensubtitles" => jobs.extend(opensubtitles_jobs(&args)),
-            "wikipedia" => jobs.extend(wikipedia_jobs(&args)),
-            other => {
-                return Err(anyhow!(
-                    "unknown source '{other}' (want tatoeba|opensubtitles|wikipedia|cc100)"
-                ))
-            }
+            name => match FIXED_SOURCES.iter().find(|s| s.name == name) {
+                Some(spec) => jobs.extend(fixed_source_jobs(spec, &args.langs)),
+                None => {
+                    return Err(anyhow!(
+                        "unknown source '{name}' (want tatoeba|opensubtitles|wikipedia|cc100)"
+                    ))
+                }
+            },
         }
     }
     eprintln!(
@@ -207,48 +192,52 @@ fn tatoeba_jobs(agent: &ureq::Agent, args: &Args) -> Result<Vec<Job>> {
 }
 
 /// Build CC-100 jobs from the fixed language list, mapped to 639-3.
-fn cc100_jobs(args: &Args) -> Vec<Job> {
-    let base = args.cc100_url.trim_end_matches('/');
-    CC100_LANGS
-        .iter()
-        .filter(|(_, iso)| args.langs.is_empty() || args.langs.iter().any(|l| l == iso))
-        .map(|(cc, iso)| Job {
-            code: (*iso).to_string(),
-            url: format!("{base}/{cc}.txt.xz"),
-            source: "cc100",
-            decomp: Decomp::Xz,
-            tsv_col: None,
-        })
-        .collect()
+/// A fixed-list download source: one host, one archive format, a static
+/// `file-code -> 639-3` table. Contrast with Tatoeba, which discovers its codes.
+struct SourceSpec {
+    name: &'static str,
+    base_url: &'static str,
+    decomp: Decomp,
+    /// Filename extension after the file code, e.g. `txt.gz`.
+    ext: &'static str,
+    langs: &'static [(&'static str, &'static str)],
 }
 
-/// Build OpenSubtitles jobs from the fixed OPUS language list, mapped to 639-3.
-fn opensubtitles_jobs(args: &Args) -> Vec<Job> {
-    let base = args.opensubtitles_url.trim_end_matches('/');
-    OPENSUB_LANGS
-        .iter()
-        .filter(|(_, iso)| args.langs.is_empty() || args.langs.iter().any(|l| l == iso))
-        .map(|(os, iso)| Job {
-            code: (*iso).to_string(),
-            url: format!("{base}/{os}.txt.gz"),
-            source: "opensubtitles",
-            decomp: Decomp::Gzip,
-            tsv_col: None,
-        })
-        .collect()
-}
+const FIXED_SOURCES: &[SourceSpec] = &[
+    SourceSpec {
+        name: "cc100",
+        base_url: "https://data.statmt.org/cc-100",
+        decomp: Decomp::Xz,
+        ext: "txt.xz",
+        langs: CC100_LANGS,
+    },
+    SourceSpec {
+        name: "opensubtitles",
+        base_url: "https://object.pouta.csc.fi/OPUS-OpenSubtitles/v2018/mono",
+        decomp: Decomp::Gzip,
+        ext: "txt.gz",
+        langs: OPENSUB_LANGS,
+    },
+    SourceSpec {
+        name: "wikipedia",
+        base_url: "https://object.pouta.csc.fi/OPUS-Wikipedia/v1.0/mono",
+        decomp: Decomp::Gzip,
+        ext: "txt.gz",
+        langs: WIKIPEDIA_LANGS,
+    },
+];
 
-/// Build Wikipedia jobs from the fixed OPUS language list, mapped to 639-3.
-fn wikipedia_jobs(args: &Args) -> Vec<Job> {
-    let base = args.wikipedia_url.trim_end_matches('/');
-    WIKIPEDIA_LANGS
+/// Build jobs for a fixed-list source, mapping its file codes to 639-3.
+fn fixed_source_jobs(spec: &'static SourceSpec, filter: &[String]) -> Vec<Job> {
+    let base = spec.base_url.trim_end_matches('/');
+    spec.langs
         .iter()
-        .filter(|(_, iso)| args.langs.is_empty() || args.langs.iter().any(|l| l == iso))
-        .map(|(wp, iso)| Job {
+        .filter(|(_, iso)| filter.is_empty() || filter.iter().any(|l| l == iso))
+        .map(|(file, iso)| Job {
             code: (*iso).to_string(),
-            url: format!("{base}/{wp}.txt.gz"),
-            source: "wikipedia",
-            decomp: Decomp::Gzip,
+            url: format!("{base}/{file}.{}", spec.ext),
+            source: spec.name,
+            decomp: spec.decomp,
             tsv_col: None,
         })
         .collect()

@@ -6,8 +6,8 @@
 //! are skipped at detection time. Storing only top-K keeps the table at a few
 //! MB instead of `vocab_size * num_langs` dense floats.
 
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::io;
 use std::path::Path;
 
 /// Index into [`LangModel::langs`].
@@ -39,28 +39,26 @@ pub struct LangModel {
 
 impl LangModel {
     /// Serialize to a compact binary file.
-    pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
-        let bytes = bincode::serialize(self).map_err(to_io)?;
-        std::fs::write(path, bytes)
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let bytes = bincode::serialize(self).context("serialize model")?;
+        std::fs::write(path, bytes).with_context(|| format!("write model {}", path.display()))
     }
 
     /// Load a model written by [`LangModel::save`].
-    pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
-        let bytes = std::fs::read(path)?;
-        let model: LangModel = bincode::deserialize(&bytes).map_err(to_io)?;
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        let bytes =
+            std::fs::read(path).with_context(|| format!("read model {}", path.display()))?;
+        let model: LangModel = bincode::deserialize(&bytes)
+            .with_context(|| format!("deserialize model {}", path.display()))?;
         if model.version != MODEL_VERSION {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "model version {} != expected {MODEL_VERSION}",
-                    model.version
-                ),
-            ));
+            bail!(
+                "model {} version {} != expected {MODEL_VERSION}",
+                path.display(),
+                model.version
+            );
         }
         Ok(model)
     }
-}
-
-fn to_io<E: std::fmt::Display>(e: E) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
 }
